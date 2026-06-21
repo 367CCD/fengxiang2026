@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.txq.xiaohongshu.mapper.SearchHistoryMapper">
+
+    <resultMap id="SearchHistoryResultMap" type="com.txq.xiaohongshu.pojo.SearchHistory">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="keyword" property="keyword"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <!-- Upsert 写入：依赖 uk_user_keyword 唯一索引，存在则更新 updated_at -->
+    <insert id="upsert">
+        INSERT INTO search_history (user_id, keyword)
+        VALUES (#{userId}, #{keyword})
+        ON DUPLICATE KEY UPDATE updated_at = NOW()
+    </insert>
+
+    <!-- 查询用户搜索历史（按最后搜索时间倒序） -->
+    <select id="selectByUserId" resultMap="SearchHistoryResultMap">
+        SELECT id, user_id, keyword, created_at, updated_at
+        FROM search_history
+        WHERE user_id = #{userId}
+        ORDER BY updated_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 清空用户搜索历史 -->
+    <delete id="deleteByUserId">
+        DELETE FROM search_history WHERE user_id = #{userId}
+    </delete>
+
+    <!-- 超出上限时删除最旧记录 -->
+    <delete id="deleteOldestByUserId">
+        DELETE FROM search_history
+        WHERE user_id = #{userId}
+          AND id NOT IN (
+              SELECT id FROM (
+                  SELECT id FROM search_history
+                  WHERE user_id = #{userId}
+                  ORDER BY updated_at DESC
+                  LIMIT #{keepCount}
+              ) AS keep
+          )
+    </delete>
+
+    <!-- ==================== 管理端 ==================== -->
+
+    <!-- 热门搜索关键词 TOP N（按时间范围统计搜索次数） -->
+    <select id="selectHotKeywords" resultType="java.util.HashMap">
+        SELECT keyword, COUNT(*) AS count
+        FROM search_history
+        WHERE updated_at &gt;= #{startTime}
+          AND updated_at &lt;= #{endTime}
+        GROUP BY keyword
+        ORDER BY count DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 搜索趋势（按天聚合搜索次数） -->
+    <select id="selectSearchTrend" resultType="java.util.HashMap">
+        SELECT DATE(updated_at) AS date, COUNT(*) AS count
+        FROM search_history
+        WHERE updated_at &gt;= #{startTime}
+          AND updated_at &lt;= #{endTime}
+        GROUP BY DATE(updated_at)
+        ORDER BY date
+    </select>
+
+    <!-- 管理端搜索历史列表 -->
+    <select id="selectAdminList" resultMap="SearchHistoryResultMap">
+        SELECT sh.id, sh.user_id, sh.keyword, sh.created_at, sh.updated_at,
+               u.username
+        FROM search_history sh
+        LEFT JOIN users u ON u.id = sh.user_id
+        <where>
+            <if test="userId != null">AND sh.user_id = #{userId}</if>
+            <if test="keyword != null and keyword != ''">AND sh.keyword LIKE CONCAT('%', #{keyword}, '%')</if>
+        </where>
+        ORDER BY sh.updated_at DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="countAdminList" resultType="long">
+        SELECT COUNT(*) FROM search_history
+        <where>
+            <if test="userId != null">AND user_id = #{userId}</if>
+            <if test="keyword != null and keyword != ''">AND keyword LIKE CONCAT('%', #{keyword}, '%')</if>
+        </where>
+    </select>
+
+    <!-- 按关键词删除搜索历史 -->
+    <delete id="deleteByKeyword">
+        DELETE FROM search_history WHERE keyword LIKE CONCAT('%', #{keyword}, '%')
+    </delete>
+
+</mapper>
