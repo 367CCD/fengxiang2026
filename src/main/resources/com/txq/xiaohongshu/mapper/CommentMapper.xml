@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.txq.xiaohongshu.mapper.CommentMapper">
+
+    <resultMap id="CommentResultMap" type="com.txq.xiaohongshu.pojo.Comment">
+        <id column="id" property="id"/>
+        <result column="post_id" property="postId"/>
+        <result column="user_id" property="userId"/>
+        <result column="content" property="content"/>
+        <result column="parent_id" property="parentId"/>
+        <result column="reply_to_user_id" property="replyToUserId"/>
+        <result column="like_count" property="likeCount"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <!-- 插入评论 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO comments (post_id, user_id, content, parent_id, reply_to_user_id)
+        VALUES (#{postId}, #{userId}, #{content}, #{parentId}, #{replyToUserId})
+    </insert>
+
+    <!-- 根据ID查询 -->
+    <select id="selectById" resultMap="CommentResultMap">
+        SELECT * FROM comments WHERE id = #{id}
+    </select>
+
+    <!-- 软删除：将 status 设为 0 -->
+    <update id="softDeleteById">
+        UPDATE comments SET status = 0 WHERE id = #{id}
+    </update>
+
+    <!-- ==================== 一级评论 ==================== -->
+
+    <!-- 帖子的一级评论列表（含发布者信息 + 二级回复数） -->
+    <select id="selectByPostId" resultType="com.txq.xiaohongshu.pojo.CommentVO">
+        SELECT
+            c.id, c.post_id AS postId, c.user_id AS userId,
+            c.content, c.like_count AS likeCount,
+            c.created_at AS createdAt,
+            u.username, u.avatar_url AS avatarUrl,
+            (SELECT COUNT(*)
+             FROM comments r
+             WHERE r.parent_id = c.id AND r.status = 1) AS replyCount
+        FROM comments c
+        LEFT JOIN users u ON c.user_id = u.id
+        WHERE c.post_id = #{postId}
+          AND c.parent_id IS NULL
+          AND c.status = 1
+        ORDER BY c.created_at DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <!-- 帖子一级评论总数 -->
+    <select id="countByPostId" resultType="long">
+        SELECT COUNT(*)
+        FROM comments
+        WHERE post_id = #{postId}
+          AND parent_id IS NULL
+          AND status = 1
+    </select>
+
+    <!-- ==================== 二级回复 ==================== -->
+
+    <!-- 某条一级评论的二级回复列表（含发布者 + 被回复用户信息） -->
+    <select id="selectReplies" resultType="com.txq.xiaohongshu.pojo.CommentVO">
+        SELECT
+            c.id, c.post_id AS postId, c.user_id AS userId,
+            c.parent_id AS parentId,
+            c.reply_to_user_id AS replyToUserId,
+            c.content, c.like_count AS likeCount,
+            c.created_at AS createdAt,
+            u.username, u.avatar_url AS avatarUrl,
+            ru.username AS replyToUsername
+        FROM comments c
+        LEFT JOIN users u ON c.user_id = u.id
+        LEFT JOIN users ru ON c.reply_to_user_id = ru.id
+        WHERE c.post_id = #{postId}
+          AND c.parent_id = #{parentId}
+          AND c.status = 1
+        ORDER BY c.created_at ASC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <!-- 某条一级评论的二级回复总数 -->
+    <select id="countReplies" resultType="long">
+        SELECT COUNT(*)
+        FROM comments
+        WHERE post_id = #{postId}
+          AND parent_id = #{parentId}
+          AND status = 1
+    </select>
+
+    <!-- ==================== 评论数冗余更新 ==================== -->
+
+    <!-- 帖子评论数 +1 -->
+    <update id="incrementCommentCount">
+        UPDATE posts SET comment_count = comment_count + 1 WHERE id = #{postId}
+    </update>
+
+    <!-- 帖子评论数 -1 -->
+    <update id="decrementCommentCount">
+        UPDATE posts SET comment_count = comment_count - 1 WHERE id = #{postId}
+    </update>
+
+    <!-- ==================== 评论点赞 ==================== -->
+
+    <!-- 插入评论点赞 -->
+    <insert id="insertLike">
+        INSERT INTO likes (user_id, target_type, target_id)
+        VALUES (#{userId}, #{targetType}, #{commentId})
+    </insert>
+
+    <!-- 删除评论点赞 -->
+    <delete id="deleteLike">
+        DELETE FROM likes
+        WHERE user_id = #{userId}
+          AND target_type = #{targetType}
+          AND target_id = #{commentId}
+    </delete>
+
+    <!-- 评论点赞数 +1 -->
+    <update id="incrementLikeCount">
+        UPDATE comments SET like_count = like_count + 1 WHERE id = #{commentId}
+    </update>
+
+    <!-- 评论点赞数 -1 -->
+    <update id="decrementLikeCount">
+        UPDATE comments SET like_count = like_count - 1 WHERE id = #{commentId}
+    </update>
+
+    <!-- ==================== 管理端 ==================== -->
+
+    <!-- 评论管理列表（含发布者、所属帖子） -->
+    <select id="selectAdminList" resultType="com.txq.xiaohongshu.pojo.CommentVO">
+        SELECT c.id, c.content, c.status, c.like_count AS likeCount,
+               c.parent_id AS parentId, c.created_at AS createdAt,
+               c.user_id AS userId, u.username, u.avatar_url AS avatarUrl,
+               c.post_id AS postId, p.title AS postTitle
+        FROM comments c
+        JOIN users u ON u.id = c.user_id
+        LEFT JOIN posts p ON p.id = c.post_id
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND c.content LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+            <if test="userId != null">
+                AND c.user_id = #{userId}
+            </if>
+            <if test="postId != null">
+                AND c.post_id = #{postId}
+            </if>
+            <if test="status != null">
+                AND c.status = #{status}
+            </if>
+            <if test="startTime != null and startTime != ''">
+                AND c.created_at &gt;= #{startTime}
+            </if>
+            <if test="endTime != null and endTime != ''">
+                AND c.created_at &lt;= #{endTime}
+            </if>
+        </where>
+        ORDER BY c.created_at DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="countAdminList" resultType="long">
+        SELECT COUNT(*) FROM comments c
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND c.content LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+            <if test="userId != null">
+                AND c.user_id = #{userId}
+            </if>
+            <if test="postId != null">
+                AND c.post_id = #{postId}
+            </if>
+            <if test="status != null">
+                AND c.status = #{status}
+            </if>
+            <if test="startTime != null and startTime != ''">
+                AND c.created_at &gt;= #{startTime}
+            </if>
+            <if test="endTime != null and endTime != ''">
+                AND c.created_at &lt;= #{endTime}
+            </if>
+        </where>
+    </select>
+
+    <!-- 批量软删除 -->
+    <update id="batchSoftDelete">
+        UPDATE comments SET status = 0
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </update>
+
+    <!-- 批量恢复 -->
+    <update id="batchRestore">
+        UPDATE comments SET status = 1
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </update>
+
+    <!-- 评论详情含上下文（发帖者、所属帖子信息） -->
+    <select id="selectByIdWithContext" resultType="com.txq.xiaohongshu.pojo.CommentVO">
+        SELECT c.id, c.content, c.status, c.like_count AS likeCount,
+               c.parent_id AS parentId, c.reply_to_user_id AS replyToUserId,
+               c.created_at AS createdAt,
+               c.user_id AS userId, u.username, u.avatar_url AS avatarUrl,
+               c.post_id AS postId, p.title AS postTitle
+        FROM comments c
+        JOIN users u ON u.id = c.user_id
+        LEFT JOIN posts p ON p.id = c.post_id
+        WHERE c.id = #{id}
+    </select>
+
+    <!-- 根据评论ID查作者ID -->
+    <select id="selectUserIdByCommentId" resultType="long">
+        SELECT user_id FROM comments WHERE id = #{commentId}
+    </select>
+
+    <!-- 统计某用户评论数 -->
+    <select id="countByUserId" resultType="long">
+        SELECT COUNT(*) FROM comments WHERE user_id = #{userId} AND status = 1
+    </select>
+
+</mapper>
