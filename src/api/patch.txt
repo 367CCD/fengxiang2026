@@ -1,0 +1,21 @@
+﻿@@ -236,9 +236,13 @@
+ // ==================== 文件上传 ====================
+ export const uploadApi = {
+   uploadImage(file) {
+     const form = new FormData()
+     form.append('file', file)
+-    return api.post('/upload', form)
++    return api.post('/upload/image', form)
+   },
+-  uploadVideo(file) {
++  uploadVideo(videoFile, coverFile) {
+     const form = new FormData()
+-    form.append('file', file)
+-    return api.post('/upload', form)
++    form.append('file', videoFile)
++    if (coverFile) {
++      form.append('cover', coverFile)
++    }
++    return api.post('/upload/video', form)
+   }
+ }
