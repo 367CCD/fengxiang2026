@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.txq.xiaohongshu.mapper.DashboardMapper">
+
+    <!-- 动态统计今日新增（通过表名和列名动态查询） -->
+    <select id="countToday" resultType="long">
+        SELECT COUNT(*) FROM ${tableName}
+        WHERE ${colName} &gt;= #{todayStart}
+    </select>
+
+    <!-- 趋势数据（按天聚合） -->
+    <select id="selectTrend" resultType="java.util.HashMap">
+        SELECT DATE(${colName}) AS date, COUNT(*) AS count
+        FROM ${tableName}
+        WHERE ${colName} &gt;= #{startTime}
+        GROUP BY DATE(${colName})
+        ORDER BY date
+    </select>
+
+    <!-- 互动趋势（点赞+评论+收藏 按天聚合） -->
+    <select id="selectInteractTrend" resultType="java.util.HashMap">
+        SELECT date, SUM(cnt) AS count FROM (
+            SELECT DATE(created_at) AS date, COUNT(*) AS cnt FROM likes WHERE created_at &gt;= #{startTime} GROUP BY DATE(created_at)
+            UNION ALL
+            SELECT DATE(created_at) AS date, COUNT(*) AS cnt FROM comments WHERE created_at &gt;= #{startTime} GROUP BY DATE(created_at)
+            UNION ALL
+            SELECT DATE(created_at) AS date, COUNT(*) AS cnt FROM collection_posts WHERE created_at &gt;= #{startTime} GROUP BY DATE(created_at)
+        ) t GROUP BY date ORDER BY date
+    </select>
+
+    <!-- 热门帖子 TOP N -->
+    <select id="selectHotPosts" resultType="java.util.HashMap">
+        SELECT p.id, p.title, p.like_count AS likeCount,
+               p.comment_count AS commentCount, p.collect_count AS collectCount,
+               u.username
+        FROM posts p
+        JOIN users u ON u.id = p.user_id
+        WHERE p.status = 1
+        ORDER BY p.like_count + p.comment_count * 2 + p.collect_count * 3 DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 活跃创作者 TOP N -->
+    <select id="selectActiveCreators" resultType="java.util.HashMap">
+        SELECT u.id, u.username, u.avatar_url AS avatarUrl,
+               COUNT(DISTINCT p.id) AS postCount,
+               COALESCE(SUM(p.like_count), 0) AS totalLikes
+        FROM users u
+        LEFT JOIN posts p ON p.user_id = u.id AND p.status = 1
+        WHERE u.status = 1
+        GROUP BY u.id
+        ORDER BY postCount DESC, totalLikes DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 热门标签 TOP N -->
+    <select id="selectHotTags" resultType="java.util.HashMap">
+        SELECT id, name, post_count AS postCount, follow_count AS followCount
+        FROM tags
+        WHERE status = 1
+        ORDER BY post_count DESC, follow_count DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 高频违规用户 TOP N -->
+    <select id="selectTopViolators" resultType="java.util.HashMap">
+        SELECT u.id, u.username,
+               COUNT(r.id) AS reportCount,
+               COUNT(DISTINCT r.user_id) AS reporterCount
+        FROM users u
+        JOIN reports r ON (r.target_type = 1 AND r.target_id IN (SELECT id FROM posts WHERE user_id = u.id))
+                        OR (r.target_type = 2 AND r.target_id IN (SELECT id FROM comments WHERE user_id = u.id))
+                        OR (r.target_type = 3 AND r.target_id = u.id)
+        WHERE r.status = 1
+        GROUP BY u.id, u.username
+        ORDER BY reportCount DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

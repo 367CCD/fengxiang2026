@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.txq.xiaohongshu.mapper.UserMuteHistoryMapper">
+
+    <resultMap id="MuteHistoryResultMap" type="com.txq.xiaohongshu.pojo.UserMuteHistory">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="operator_id" property="operatorId"/>
+        <result column="action" property="action"/>
+        <result column="reason" property="reason"/>
+        <result column="mute_duration" property="muteDuration"/>
+        <result column="mute_end_time" property="muteEndTime"/>
+        <result column="unmute_type" property="unmuteType"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="operator_name" property="operatorName"/>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO user_mute_history (
+            user_id, operator_id, action, reason,
+            mute_duration, mute_end_time, unmute_type
+        ) VALUES (
+            #{userId}, #{operatorId}, #{action}, #{reason},
+            #{muteDuration}, #{muteEndTime}, #{unmuteType}
+        )
+    </insert>
+
+    <select id="selectByUserId" resultMap="MuteHistoryResultMap">
+        SELECT h.*, op.username AS operator_name
+        FROM user_mute_history h
+        JOIN users op ON op.id = h.operator_id
+        WHERE h.user_id = #{userId}
+        ORDER BY h.created_at DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="countByUserId" resultType="long">
+        SELECT COUNT(*) FROM user_mute_history WHERE user_id = #{userId}
+    </select>
+
+</mapper>
