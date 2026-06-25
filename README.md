@@ -1,2 +1,2 @@
-# fengxiang2026
-这是我的第一个项目。/The first project for a beginner.
+一款仿小红书的图文/视频博客社区系统，支持用户发布笔记、收藏点赞、内容发现等功能，并提供完整的管理后台用于社区运营和内容风控。
+系统采用前后端分离架构，后端为 Spring Boot + MyBatis，前端为 Vue 3 + Element Plus。
